@@ -1,0 +1,159 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: µVision V5.42.0.0
+Copyright (C) 2025 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: Romanch Neupane, rts, LIC=NHYH9-4MK64-LVG1I-T9D40-E4BUX-27SUI
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Professional  Version: 5.42.0.0
+Toolchain Path:  C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\Bin
+C Compiler:      ArmClang.exe V6.23
+Assembler:       Armasm.exe V6.23
+Linker/Locator:  ArmLink.exe V6.23
+Library Manager: ArmAr.exe V6.23
+Hex Converter:   FromElf.exe V6.23
+CPU DLL:         SARMCM3.DLL V5.42.0.0
+Dialog DLL:      DCM.DLL V1.17.5.0
+Target DLL:      Segger\JL2CM3.dll V2.99.45.0
+Dialog DLL:      TCM.DLL V1.56.6.0
+ 
+<h2>Project:</h2>
+C:\Projects\A121_board\STM32CubeMX_a121\MDK-ARM\STM32CubeMX.uvprojx
+Project File Date:  11/28/2025
+
+<h2>Output:</h2>
+*** Using Compiler 'V6.23', folder: 'C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\Bin'
+Rebuild target 'STM32CubeMX'
+compiling stm32wbxx_ll_rcc.c...
+assembling startup_stm32wb55xx_cm4.s...
+compiling acc_integration_log.c...
+compiling stm32wbxx_hal_msp.c...
+compiling stm32wbxx_it.c...
+compiling example_detector_distance.c...
+compiling acc_hal_integration_stm32cube_xe121_single_sensor.c...
+compiling acc_integration_stm32.c...
+compiling main.c...
+compiling stm32wbxx_hal_rcc.c...
+compiling stm32wbxx_hal_hsem.c...
+compiling stm32wbxx_hal_flash.c...
+compiling stm32wbxx_hal_gpio.c...
+compiling stm32wbxx_hal_flash_ex.c...
+compiling stm32wbxx_hal_dma.c...
+compiling stm32wbxx_hal_dma_ex.c...
+compiling stm32wbxx_hal_pwr.c...
+compiling stm32wbxx_hal_rcc_ex.c...
+compiling stm32wbxx_hal_pwr_ex.c...
+compiling stm32wbxx_hal_cortex.c...
+compiling stm32wbxx_hal_exti.c...
+compiling stm32wbxx_hal.c...
+compiling stm32wbxx_hal_spi_ex.c...
+compiling system_stm32wbxx.c...
+compiling stm32wbxx_hal_uart_ex.c...
+compiling stm32wbxx_hal_spi.c...
+compiling stm32wbxx_hal_uart.c...
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(654): warning: use of NaN via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  654 |         float df = NAN;
+      |                    ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(654): warning: use of NaN is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  654 |         float df = NAN;
+      |                    ^~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(272): note: expanded from macro 'NAN'
+  272 | #   define NAN __builtin_nanf("")
+      |                ^~~~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(696): warning: use of NaN via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  696 |         float res = NAN;
+      |                     ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(696): warning: use of NaN is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  696 |         float res = NAN;
+      |                     ^~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(272): note: expanded from macro 'NAN'
+  272 | #   define NAN __builtin_nanf("")
+      |                ^~~~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(939): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  939 |         float min = INFINITY;
+      |                     ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(939): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  939 |         float min = INFINITY;
+      |                     ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(985): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  985 |         float max = -INFINITY;
+      |                      ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(985): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+  985 |         float max = -INFINITY;
+      |                      ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1014): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1014 |         float biggest_energy_slow  = -INFINITY;
+      |                                       ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1014): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1014 |         float biggest_energy_slow  = -INFINITY;
+      |                                       ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1015): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1015 |         float biggest_energy_valid = -INFINITY;
+      |                                       ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1015): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1015 |         float biggest_energy_valid = -INFINITY;
+      |                                       ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1909): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1909 |         float min = INFINITY;
+      |                     ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1909): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1909 |         float min = INFINITY;
+      |                     ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1910): warning: use of infinity via a macro is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1910 |         float max = -INFINITY;
+      |                      ^
+C:/Users/roman.CAPNG/OneDrive/Desktop/Codebase/A121_config/acconeer_cortex_m4_armclang_a121-v1_12_0/cortex_m4_armclang/algorithms/acc_algorithm.c(1910): warning: use of infinity is undefined behavior due to the currently enabled floating-point options [-Wnan-infinity-disabled]
+ 1910 |         float max = -INFINITY;
+      |                      ^~~~~~~~
+C:\Users\roman.CAPNG\AppData\Local\Keil_v5\ARM\ARMCLANG\bin\..\include\math.h(271): note: expanded from macro 'INFINITY'
+  271 | #   define INFINITY __builtin_inff()
+      |                     ^~~~~~~~~~~~~~~~
+16 warnings generated.
+compiling acc_algorithm.c...
+linking...
+Program Size: Code=99308 RO-data=21012 RW-data=440 ZI-data=2192  
+FromELF: creating hex file...
+"STM32CubeMX\STM32CubeMX.axf" - 0 Error(s), 16 Warning(s).
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: ARM
+                https://www.keil.com/pack/ARM.CMSIS.6.2.0.pack
+                ARM::CMSIS@6.2.0
+                CMSIS (Common Microcontroller Software Interface Standard)
+   * Component: CORE Version: 6.1.1
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.STM32WBxx_DFP.2.0.1.pack
+                Keil::STM32WBxx_DFP@2.0.1
+                STMicroelectronics STM32WB Series Device Support
+
+<h2>Collection of Component include folders:</h2>
+  ./RTE/_STM32CubeMX
+  C:/Users/roman.CAPNG/AppData/Local/Arm/Packs/ARM/CMSIS/6.2.0/CMSIS/Core/Include
+
+<h2>Collection of Component Files used:</h2>
+
+   * Component: ARM::CMSIS:CORE@6.1.1
+Build Time Elapsed:  00:00:04
+</pre>
+</body>
+</html>
