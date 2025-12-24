@@ -1,9 +1,0 @@
-
-The libraries in this package was built with the following configuration:
-
-Compiler version:
-    Product: Arm Development Studio Bronze Edition 2023.0 Component: Arm Compiler for Embedded 6.20 Tool: armclang [5e9ad700] 
-
-Compiler flags:
-    -DTARGET_ARCH_cm4 -DFLOAT_ABI_HARD -std=c99 -Wall -Werror -Wpedantic -Wno-gnu-imaginary-constant
-    -MMD -MP -O2 -g -ffunction-sections -fdata-sections
