@@ -6,6 +6,7 @@ extern UART_HandleTypeDef huart1;
 extern void print_uart(char *, uint8_t, uint8_t);
 static void print_u16(char *, uint16_t );
 
+extern float charger_data[6];
 
 
 uint16_t charge_i2c_addr = CHARGER_I2C_ADDR;
@@ -23,7 +24,7 @@ charger_adc adc_val;
 void charge_config(void) {
     HAL_I2C_Mem_Read(&hi2c1, charge_i2c_addr, CHARGER_PART_INFO_REG, I2C_MEMADD_SIZE_8BIT, &charge_part_info, 1, HAL_MAX_DELAY);
 
-    print_uart("device part number: ", sizeof("device part number: "), charge_part_info);
+//    print_uart("device part number: ", sizeof("device part number: "), charge_part_info);
 }
 
 void get_charger_status(charger_status_val_t *charger_status_val) {
@@ -72,12 +73,19 @@ void get_adc(void) {
 
     HAL_I2C_Mem_Read(&hi2c1, charge_i2c_addr, CHARGER_ADC_BAT_TEMP_REG, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
     adc_val.bat_temp = (buf[1] | (uint16_t)(buf[0] << 8));
-		print_u16("VBAT",     adc_val.vbat);
-		print_u16("VSYS",     adc_val.vsys);
-		print_u16("VBUS",     adc_val.vbus);
-		print_u16("IBAT",     adc_val.ibat);
-		print_u16("IBUS",     adc_val.ibus);
-		print_u16("BAT_TEMP", adc_val.bat_temp);
+
+    charger_data[0] = (adc_val.vbat) / 1000;
+    charger_data[1] = (adc_val.vsys) / 1000;
+    charger_data[2] = (adc_val.vbus) / 1000;
+    charger_data[3] = (adc_val.ibat) / 1000;
+    charger_data[4] = (adc_val.ibus) / 1000;
+    charger_data[5] = adc_val.bat_temp;
+		// print_u16("VBAT",     adc_val.vbat);
+		// print_u16("VSYS",     adc_val.vsys);
+		// print_u16("VBUS",     adc_val.vbus);
+		// print_u16("IBAT",     adc_val.ibat);
+		// print_u16("IBUS",     adc_val.ibus);
+		// print_u16("BAT_TEMP", adc_val.bat_temp);
 }
 static void print_u16(char *label, uint16_t value)
 {
