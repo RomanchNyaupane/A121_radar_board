@@ -12,6 +12,9 @@
 #include "stm32wbxx_hal.h"
 #include "lsm6dsv16x_reg.h"
 #include "math.h"
+#include "stm32wb55xx.h"
+#include "sdi_cli.h"
+#include "stdint.h"
 
 #define IMU_I2C_ADDR_WR 0xD5
 #define IMU_I2C_ADDR_RD 0xD7
@@ -36,7 +39,8 @@ int fputc(int ch, FILE *f)
 I2C_HandleTypeDef hi2c1;
 SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart1, hlpuart1;
+CRC_HandleTypeDef hcrc;
 
 imu_config_t himu;
 
@@ -61,11 +65,17 @@ void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void USART1_LPUART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI2_Init(void);
 static void RTC_Init(void);
-static void imu_config();
+// static void imu_config();
+static void sdi_init();
 static inline void _enable_debugger ( void );
+static void CRC_Init(void);
+
+
+void dummy(void){uint8_t dummy = 1;}
 
 void print_uart(char *, uint8_t , uint8_t);
 uint8_t int_to_char(uint32_t , uint8_t *);
@@ -77,23 +87,31 @@ void platform_delay(uint32_t);
 volatile uint8_t connected;
 volatile uint8_t data_ready_flags;
 volatile uint8_t charge_exti_flag;
+volatile uint8_t sdi_data_rx_flag;
+
+float imu_data[3], radar_data[6], charger_data[6], rtc_data[6], flash_data[1];
+// uint32_t imu_crc, radar_crc, charger_crc, rtc_crc, flash_crc;
+char imu_data_ascii[50], radar_data_ascii[50], charger_data_ascii[50], rtc_data_ascii[50], flash_data_ascii[50];
+
+uint8_t sdi_rx[20];
+uint8_t sdi_rx_byte;
 
 void A121_Task()
 {
+		acc_example_detector_distance(0, NULL);
     while (1)
     {
-			acc_example_detector_distance(0, NULL);
       //vTaskDelay(100);
     }
 }
 void flash_task(){
 	flash_spi_init(&hspi2);
 	while(1){
-		print_uart("data from address 0x00000001: ", sizeof("data from address 0x00000001: "), flash_read_byte(0x00000001));
-		print_uart("data from address 0x00000002: ", sizeof("data from address 0x00000002: "), flash_read_byte(0x00000002));
-		print_uart("data from address 0x00000003: ", sizeof("data from address 0x00000003: "), flash_read_byte(0x00000003));
-		print_uart("data from address 0x00000004: ", sizeof("data from address 0x00000004: "), flash_read_byte(0x00000004));
-		vTaskDelay(10);
+		//print_uart("data from address 0x00000001: ", sizeof("data from address 0x00000001: "), flash_read_byte(0x00000001));
+		//print_uart("data from address 0x00000002: ", sizeof("data from address 0x00000002: "), flash_read_byte(0x00000002));
+		//print_uart("data from address 0x00000003: ", sizeof("data from address 0x00000003: "), flash_read_byte(0x00000003));
+		//print_uart("data from address 0x00000004: ", sizeof("data from address 0x00000004: "), flash_read_byte(0x00000004));
+		vTaskDelay(100);
 	}
 }
 void charger_task(){
@@ -103,15 +121,36 @@ void charger_task(){
 	
 	while(1){
 		if(charge_exti_flag){
-			HAL_UART_Transmit(&huart1, (uint8_t*)"charger interrupt \n", sizeof("charger interrupt \n"), HAL_MAX_DELAY);
+			HAL_UART_Transmit(&hlpuart1, (uint8_t*)"charger interrupt \n", sizeof("charger interrupt \n"), HAL_MAX_DELAY);
 			charge_exti_flag = 0;
 			get_flag_status(&charger_flag_val);
 		}
 			set_adc();
 			get_adc();
-			vTaskDelay(10);
+			vTaskDelay(100);
 	}
 }
+
+
+  /*
+  The format for the SFLP-generated sensors in FIFO is listed below:
+    • Game rotation vector: X, Y, and Z axes (vector part of the quaternion) are stored in half-precision floating
+      point format, where w (scalar part of the quaternion) is computed in software after reading the data from 
+      the FIFO, since the game rotation vector is a unit quaternion.
+    • Gravity vector: X, Y, and Z axes are stored as 16-bit two's complement number with ±2 g sensitivity.
+    • Gyroscope bias: X, Y, and Z axes are stored as 16-bit two's complement number with ±125 dps sensitivity.
+  */
+  //we should identify data based on tag 
+  /* Tag  | data
+    0x13 | SFLP game rotation vector
+    0x16 | SFLP gyroscope bias
+    0x17 | SFLP gravity vector
+  */
+  /*
+  the game rotation vector is in half_precision format(16 bit). each fifo read is 7 byte(1 tag, 6 data).
+  so it is axiomatic that x,y and z are obtained by consecutive two bytes of the read data array.
+  */
+  //the first element is always fifo tag
 void imu_task(){
 		//imu_start();
 		float qw, qi, qj, qk;
@@ -123,7 +162,7 @@ void imu_task(){
 		lsm6dsv16x_device_id_get(&imu_ctx, &whoamI);
 		if (whoamI != LSM6DSV16X_ID)
 		while (1);
-    lsm6dsv16x_sw_por(&imu_ctx);
+    lsm6dsv16x_sw_por(&imu_ctx); //default configuration
 	
 	  lsm6dsv16x_block_data_update_set(&imu_ctx, PROPERTY_ENABLE);
     lsm6dsv16x_xl_full_scale_set(&imu_ctx, LSM6DSV16X_4g);
@@ -172,48 +211,16 @@ void imu_task(){
           float_t gbias_mdps[3];
 
           /* Read FIFO sensor value */
-          lsm6dsv16x_fifo_out_raw_get(&imu_ctx, &f_data);
-
-          //the function reads 7 fifo location starting with tag and 6 data lccations
-          /*
-          The format for the SFLP-generated sensors in FIFO is listed below:
-            • Game rotation vector: X, Y, and Z axes (vector part of the quaternion) are stored in half-precision floating
-              point format, where w (scalar part of the quaternion) is computed in software after reading the data from 
-              the FIFO, since the game rotation vector is a unit quaternion.
-            • Gravity vector: X, Y, and Z axes are stored as 16-bit two's complement number with ±2 g sensitivity.
-            • Gyroscope bias: X, Y, and Z axes are stored as 16-bit two's complement number with ±125 dps sensitivity.
-          */
-         //we should identify data based on tag 
-         /* Tag  | data
-            0x13 | SFLP game rotation vector
-            0x16 | SFLP gyroscope bias
-            0x17 | SFLP gravity vector
-          */
-         /*
-          the game rotation vector is half_precision format(16 bit). each fifo read is 7 byte(1 tag, 6 data).
-          so it is axiomatic that x,y and z are obtained by consecutive two bytes of the read data array.
-         */
-         //the first element is always fifo tag
-         if(f_data.tag == LSM6DSV16X_SFLP_GAME_ROTATION_VECTOR_TAG){
-           game_rotation[0] = f_data.data[0];
-           game_rotation[1] = f_data.data[1];
-           game_rotation[2] = f_data.data[2];
-           game_rotation[3] = f_data.data[3];
-           game_rotation[4] = f_data.data[4];
-           game_rotation[5] = f_data.data[5];
-           game_rotation[6] = f_data.tag;
-         }
+        lsm6dsv16x_fifo_out_raw_get(&imu_ctx, &f_data);
+        
          //since the numbers are half precision format, we need to convert to single precision(64 bit)
-        tmp = lsm6dsv16x_from_f16_to_f32(
-                      (uint16_t)(game_rotation[0] | (game_rotation[1] << 8)));
+        tmp = lsm6dsv16x_from_f16_to_f32((uint16_t)(f_data.data[0] | (f_data.data[1] << 8)));
         memcpy(&qi, &tmp, sizeof(float));
 
-        tmp = lsm6dsv16x_from_f16_to_f32(
-                      (uint16_t)(game_rotation[2] | (game_rotation[3] << 8)));
+        tmp = lsm6dsv16x_from_f16_to_f32((uint16_t)(f_data.data[2] | (f_data.data[3] << 8)));
         memcpy(&qj, &tmp, sizeof(float));
 
-        tmp = lsm6dsv16x_from_f16_to_f32(
-                      (uint16_t)(game_rotation[4] | (game_rotation[5] << 8)));
+        tmp = lsm6dsv16x_from_f16_to_f32((uint16_t)(f_data.data[4] | (f_data.data[5] << 8)));
         memcpy(&qk, &tmp, sizeof(float));
 
         float t = 1.0f - (qi*qi + qj*qj + qk*qk);
@@ -223,56 +230,131 @@ void imu_task(){
             qw = 0.0f;
 
 
-        /* Roll (X-axis) */
         roll = atan2f(2.0f * (qw*qi + qj*qk),1.0f - 2.0f * (qi*qi + qj*qj));
 
-        /* Pitch (Y-axis) */
         float sinp = 2.0f * (qw*qj - qk*qi);
         if (fabsf(sinp) >= 1.0f)
             pitch = copysignf(M_PI / 2.0f, sinp);
         else
             pitch = asinf(sinp);
 
-        /* Yaw (Z-axis) */
         yaw = atan2f(2.0f * (qw*qk + qi*qj),1.0f - 2.0f * (qj*qj + qk*qk));
         }
       }
 				data_ready_flags = 0;
 		}
-    char uart_buf[64];
-    int len;
+    imu_data[0] = (float)(roll * 180.0f / M_PI);
+    imu_data[1] = (float)(pitch * 180.0f / M_PI);
+    imu_data[2] = (float)(yaw * 180.0f / M_PI);
 
-    len = snprintf(uart_buf, sizeof(uart_buf), "roll: %d\r\n", (int)(roll * 180.0f / M_PI));
-    HAL_UART_Transmit(&huart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
+    // char uart_buf[64];
+    // int len;
 
-    len = snprintf(uart_buf, sizeof(uart_buf), "pitch: %d\r\n", (int)(pitch * 180.0f / M_PI));
-    HAL_UART_Transmit(&huart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
+    // len = snprintf(uart_buf, sizeof(uart_buf), "roll: %d\r\n", (int)(roll * 180.0f / M_PI));
+    // HAL_UART_Transmit(&hlpuart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
 
-    len = snprintf(uart_buf, sizeof(uart_buf), "yaw: %d\r\n", (int)(yaw * 180.0f / M_PI));
-    HAL_UART_Transmit(&huart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
-		vTaskDelay(10);
+    // len = snprintf(uart_buf, sizeof(uart_buf), "pitch: %d\r\n", (int)(pitch * 180.0f / M_PI));
+    // HAL_UART_Transmit(&hlpuart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
+
+    // len = snprintf(uart_buf, sizeof(uart_buf), "yaw: %d\r\n", (int)(yaw * 180.0f / M_PI));
+    // HAL_UART_Transmit(&hlpuart1, (uint8_t *)uart_buf, len, HAL_MAX_DELAY);
+		vTaskDelay(80);
 		}
 }
 void rtc_task(){
 	while(1){
     HAL_RTC_GetTime(&hrtc, &time_hrtc, RTC_FORMAT_BCD);
 		HAL_RTC_GetDate(&hrtc, &date_hrtc, RTC_FORMAT_BCD);
-		print_uart("clock hour: ", sizeof("clock hour: "), time_hrtc.Hours);
-		print_uart("clock minutes: ", sizeof("clock minutes: "), time_hrtc.Minutes);
-		print_uart("clock seconds: ", sizeof("clock seconds: "), time_hrtc.Seconds);
-		vTaskDelay(10);
+    rtc_data[0] = time_hrtc.Seconds;
+    rtc_data[1] = time_hrtc.Minutes;
+    rtc_data[2] = time_hrtc.Hours;
+    rtc_data[3] = date_hrtc.Date;
+    rtc_data[4] = date_hrtc.Month;
+    rtc_data[5] = date_hrtc.Year;
+		// print_uart("clock hour: ", sizeof("clock hour: "), time_hrtc.Hours);
+		// print_uart("clock minutes: ", sizeof("clock minutes: "), time_hrtc.Minutes);
+		// print_uart("clock seconds: ", sizeof("clock seconds: "), time_hrtc.Seconds);
+		vTaskDelay(100);
 	}
 }
+
+void sdi_task(){
+	sdi_init();
+	sdi_data_rx_flag = 0;
+	while(1){
+			//sdi_state_machine();
+			if(sdi_data_rx_flag){
+				sdi_main();
+				sdi_data_rx_flag = 0;
+				HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
+			}
+
+			vTaskDelay(100);
+	}
+}
+
+extern volatile uint8_t sdi_api_imu_start, sdi_api_charger_start, sdi_api_rtc_start, sdi_api_flash_start, sdi_api_radar_start; //interface variables
+extern volatile uint8_t sdi_api_imu_crc_en, sdi_api_charger_crc_en, sdi_api_radar_crc_en, sdi_api_rtc_crc_en, sdi_api_flash_crc_en;
+
+//data ready still to add in the condition checking, time checking not added, address changing not added
+void sdi_machine(){
+  //char buf[35];
+    while(1){
+      if(sdi_api_imu_start){ 
+        snprintf(imu_data_ascii, sizeof(imu_data_ascii), "%+08.3f%+08.3f%+08.3f", imu_data[0], imu_data[1], imu_data[2]);
+        // if(sdi_api_imu_crc_en){
+				// 		imu_crc = (uint32_t) sdi_crc16(imu_data_ascii, strlen(imu_data_ascii));
+        // }else{
+        //   imu_crc = 0;
+        // }
+				api_status(SENSOR_IMU, 1, imu_data, imu_data_ascii);
+      }
+      if(sdi_api_charger_start){
+        snprintf(charger_data_ascii, sizeof(charger_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", charger_data[0], charger_data[1], charger_data[2], charger_data[3], charger_data[4], charger_data[5]);
+        // if(sdi_api_charger_crc_en){
+				// 		charger_crc = (uint32_t) sdi_crc16(charger_data_ascii, strlen(charger_data_ascii));
+        // }else{
+        //   charger_crc = 0;
+        // }
+				api_status(SENSOR_CHARGER, 1, charger_data, charger_data_ascii);
+      }
+      if(sdi_api_radar_start){
+        snprintf(radar_data_ascii, sizeof(radar_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", radar_data[0],radar_data[1],radar_data[2],radar_data[3],radar_data[4],radar_data[5]);
+        // if(sdi_api_radar_crc_en){
+				// 	radar_crc = (uint32_t) sdi_crc16(radar_data_ascii, strlen(radar_data_ascii));
+        // }else{
+        //   radar_crc = 0;
+        // }
+				api_status(SENSOR_RADAR, 1, radar_data, radar_data_ascii);
+      }
+      if(sdi_api_flash_start){
+        // if(sdi_api_flash_crc_en){
+				// 		flash_crc = (uint32_t) sdi_crc16(flash_data_ascii, strlen(flash_data_ascii));
+        // }else{
+        //   flash_crc = 0;
+        // }
+				api_status(SENSOR_FLASH, 1, flash_data, flash_data_ascii);
+      }
+       if(sdi_api_rtc_start){
+				snprintf(rtc_data_ascii, sizeof(rtc_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", rtc_data[0],rtc_data[1],rtc_data[2],rtc_data[3],rtc_data[4],rtc_data[5]);
+        // if(sdi_api_rtc_crc_en){
+				// 	rtc_crc = (uint32_t) sdi_crc16(rtc_data_ascii, strlen(rtc_data_ascii));
+        // }else{
+        //   rtc_crc = 0;
+        // }
+				api_status(SENSOR_RTC, 1, rtc_data, rtc_data_ascii);
+      }
+			vTaskDelay(100);
+    }
+}
 void led_task(){
-	//RCC -> AHB2ENR |= RCC_AHB2ENR_GPIOCEN;
-	//GPIOC -> MODER = 0x00000E00;
 	while(1){
 		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
-		vTaskDelay(10);
+		vTaskDelay(100);
 		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_5);
-		vTaskDelay(10);
-		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
-		vTaskDelay(10);
+		vTaskDelay(100);
+		//HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+		//vTaskDelay(100);
 	}
 }
 
@@ -288,7 +370,7 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI2_Init();
 	RTC_Init();
-	//imu_config();
+	USART1_LPUART_Init();
 
 	printf("init complete");
 
@@ -298,6 +380,8 @@ int main(void)
 	xTaskCreate(imu_task, "imu", 0x300, NULL, 1, NULL);
 	xTaskCreate(rtc_task, "rtc", 0x100, NULL, 1, NULL);
 	xTaskCreate(charger_task, "charger", 0x100, NULL, 1, NULL);
+	xTaskCreate(sdi_task, "sdi", 0x300, NULL, 1, NULL);
+  xTaskCreate(sdi_machine, "sdi_m", 0x500, NULL, 1, NULL);
 
 	vTaskStartScheduler();
   while (1)
@@ -308,12 +392,19 @@ int main(void)
 
 
 int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len){
-  HAL_I2C_Mem_Write(handle, IMU_I2C_ADDR_WR, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*)bufp, len, HAL_MAX_DELAY);
-
+  if(HAL_I2C_Mem_Write(handle, IMU_I2C_ADDR_WR, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*)bufp, len, HAL_MAX_DELAY) == HAL_OK){
+	  return 0;
+  } else{
+		return 1;
+	}
 }
 
 int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len){
-  HAL_I2C_Mem_Read(handle, IMU_I2C_ADDR_WR, reg, I2C_MEMADD_SIZE_8BIT, bufp, len, HAL_MAX_DELAY);
+  if(HAL_I2C_Mem_Read(handle, IMU_I2C_ADDR_WR, reg, I2C_MEMADD_SIZE_8BIT, bufp, len, HAL_MAX_DELAY) == HAL_OK){
+    return 0;
+  } else{
+		return 1;
+	}
 }
 
 void platform_delay(uint32_t millisec){
@@ -327,17 +418,6 @@ void platform_init(){
   imu_ctx.handle = &hi2c1;
 }
 
-
-void imu_config(void){
-	//himu = IMU_CONFIG_DEFAULT;
-	himu.accl_config.module_en = 1;
-	himu.accl_config.interrupt_en = 1;
-	
-	himu.gyro_config.module_en = 1;
-	himu.gyro_config.interrupt_en = 1;
-	
-	imu_init(&hi2c1, &huart1, &himu);
-}
 void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin){
     if (gpio_pin == GPIO_PIN_4) data_ready_flags |= 0x01;  //accel
     if (gpio_pin == GPIO_PIN_5) data_ready_flags |= 0x02;  //gyro
@@ -388,6 +468,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 }
+
 void PeriphCommonClock_Config(void)
 {
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
@@ -402,26 +483,12 @@ void PeriphCommonClock_Config(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN Smps */
-
-  /* USER CODE END Smps */
 }
 
-/**
-  * @brief I2C1 Initialization Function
-  * @param None
-  * @retval None
-  */
+
 static void MX_I2C1_Init(void)
 {
 
-  /* USER CODE BEGIN I2C1_Init 0 */
-
-  /* USER CODE END I2C1_Init 0 */
-
-  /* USER CODE BEGIN I2C1_Init 1 */
-
-  /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
   hi2c1.Init.Timing = 0x10B17DB5;
   hi2c1.Init.OwnAddress1 = 0;
@@ -458,14 +525,6 @@ static void MX_I2C1_Init(void)
 static void MX_SPI1_Init(void)
 {
 
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
@@ -494,14 +553,6 @@ static void MX_SPI1_Init(void)
 static void MX_SPI2_Init(void)
 {
 
-  /* USER CODE BEGIN SPI2_Init 0 */
-
-  /* USER CODE END SPI2_Init 0 */
-
-  /* USER CODE BEGIN SPI2_Init 1 */
-
-  /* USER CODE END SPI2_Init 1 */
-  /* SPI2 parameter configuration*/
   hspi2.Instance = SPI2;
   hspi2.Init.Mode = SPI_MODE_MASTER;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
@@ -574,7 +625,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2|GPIO_PIN_0|GPIO_PIN_12, GPIO_PIN_RESET);
 	
-	 HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
+	 HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
+	 HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
 
 
   /*Configure GPIO pin : PA2 */
@@ -617,6 +669,12 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+	
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -694,13 +752,90 @@ RTC_TimeTypeDef sTime = {0};
   /* USER CODE END RTC_Init 2 */
 
 }
+
+static void USART1_LPUART_Init(void){
+    hlpuart1.Instance = LPUART1;
+    hlpuart1.Init.BaudRate = 115200;
+    hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+    hlpuart1.Init.StopBits = UART_STOPBITS_1;
+    hlpuart1.Init.Parity = UART_PARITY_NONE;
+    hlpuart1.Init.Mode = UART_MODE_TX_RX;
+    hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    hlpuart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+    hlpuart1.FifoMode = UART_FIFOMODE_DISABLE;
+    if (HAL_UART_Init(&hlpuart1) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_UARTEx_SetTxFifoThreshold(&hlpuart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_UARTEx_SetRxFifoThreshold(&hlpuart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_UARTEx_DisableFifoMode(&hlpuart1) != HAL_OK)
+    {
+      Error_Handler();
+    }
+//    HAL_NVIC_SetPriority(LPUART1_IRQn, 0, 1);
+//    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
+		
+}
+
+static void CRC_Init(void){
+  hcrc.Instance = CRC;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
+
+  hcrc.Init.CRCLength = CRC_POLYLENGTH_16B;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_DISABLE;
+  hcrc.Init.GeneratingPolynomial = 0xA001;
+  hcrc.Init.InitValue = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  
+  if(HAL_CRC_Init(&hcrc) != HAL_OK){
+    Error_Handler();
+  }
+}
+
+static void sdi_init(void){
+  sdi_rx_byte = 0;
+  SDI_RX();
+  HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
+}
+
+/*the callback function appends the received byte in command buffer. if the appending function returns 1, it means
+the a complete command is received. if it returns 0, it means the appending function is appending received bytes and
+complete command is not ready yet.
+
+sdi_data_rx_flag is the flag to indicate that a complete command is received. its value is decided by the appending
+function's return value. this flag is used to set condition for the sdi task to execute sdi related functions.
+once it is set to 1, it is set back to 0 by the task. it is one of the ways to prevent uart interrupt when sdi command is 
+running. interrupt is re-enabled at the task only on the basis of this flag's value.
+*/
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(huart->Instance == LPUART1){
+    char sdi_rx_char = (char) sdi_rx_byte;
+    sdi_data_rx_flag = sdi_cmd_receive(&sdi_rx_char);
+		if(sdi_data_rx_flag == 0) HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
+	}
+	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+	//HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
+}
+
 void print_uart(char *text, uint8_t text_size, uint8_t data)
 {
     uint8_t int_char[10];
     uint8_t char_size = int_to_char(data, int_char);
-    HAL_UART_Transmit(&huart1, (uint8_t *)text, text_size, HAL_MAX_DELAY);
-    HAL_UART_Transmit(&huart1, int_char, char_size, HAL_MAX_DELAY);
-    HAL_UART_Transmit(&huart1, (uint8_t*)"\n", sizeof("\n"), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t *)text, text_size, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, int_char, char_size, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\n", sizeof("\n"), HAL_MAX_DELAY);
 }
 
 uint8_t int_to_char(uint32_t num, uint8_t *buf)
@@ -731,7 +866,6 @@ uint8_t int_to_char(uint32_t num, uint8_t *buf)
     }
     return i;
 }
-
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
