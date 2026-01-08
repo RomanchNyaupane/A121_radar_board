@@ -72,7 +72,6 @@ static void RTC_Init(void);
 // static void imu_config();
 static void sdi_init();
 static inline void _enable_debugger ( void );
-static void CRC_Init(void);
 
 
 void dummy(void){uint8_t dummy = 1;}
@@ -271,9 +270,6 @@ void rtc_task(){
     rtc_data[3] = date_hrtc.Date;
     rtc_data[4] = date_hrtc.Month;
     rtc_data[5] = date_hrtc.Year;
-		// print_uart("clock hour: ", sizeof("clock hour: "), time_hrtc.Hours);
-		// print_uart("clock minutes: ", sizeof("clock minutes: "), time_hrtc.Minutes);
-		// print_uart("clock seconds: ", sizeof("clock seconds: "), time_hrtc.Seconds);
 		vTaskDelay(100);
 	}
 }
@@ -282,7 +278,6 @@ void sdi_task(){
 	sdi_init();
 	sdi_data_rx_flag = 0;
 	while(1){
-			//sdi_state_machine();
 			if(sdi_data_rx_flag){
 				sdi_main();
 				sdi_data_rx_flag = 0;
@@ -302,46 +297,24 @@ void sdi_machine(){
     while(1){
       if(sdi_api_imu_start){ 
         snprintf(imu_data_ascii, sizeof(imu_data_ascii), "%+08.3f%+08.3f%+08.3f", imu_data[0], imu_data[1], imu_data[2]);
-        // if(sdi_api_imu_crc_en){
-				// 		imu_crc = (uint32_t) sdi_crc16(imu_data_ascii, strlen(imu_data_ascii));
-        // }else{
-        //   imu_crc = 0;
-        // }
 				api_status(SENSOR_IMU, 1, imu_data, imu_data_ascii);
       }
       if(sdi_api_charger_start){
-        snprintf(charger_data_ascii, sizeof(charger_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", charger_data[0], charger_data[1], charger_data[2], charger_data[3], charger_data[4], charger_data[5]);
-        // if(sdi_api_charger_crc_en){
-				// 		charger_crc = (uint32_t) sdi_crc16(charger_data_ascii, strlen(charger_data_ascii));
-        // }else{
-        //   charger_crc = 0;
-        // }
+        snprintf(charger_data_ascii, sizeof(charger_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", 
+                  charger_data[0], charger_data[1], charger_data[2], charger_data[3], charger_data[4], charger_data[5]);
 				api_status(SENSOR_CHARGER, 1, charger_data, charger_data_ascii);
       }
       if(sdi_api_radar_start){
-        snprintf(radar_data_ascii, sizeof(radar_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", radar_data[0],radar_data[1],radar_data[2],radar_data[3],radar_data[4],radar_data[5]);
-        // if(sdi_api_radar_crc_en){
-				// 	radar_crc = (uint32_t) sdi_crc16(radar_data_ascii, strlen(radar_data_ascii));
-        // }else{
-        //   radar_crc = 0;
-        // }
+        snprintf(radar_data_ascii, sizeof(radar_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f",
+                radar_data[0],radar_data[1],radar_data[2],radar_data[3],radar_data[4],radar_data[5]);
 				api_status(SENSOR_RADAR, 1, radar_data, radar_data_ascii);
       }
       if(sdi_api_flash_start){
-        // if(sdi_api_flash_crc_en){
-				// 		flash_crc = (uint32_t) sdi_crc16(flash_data_ascii, strlen(flash_data_ascii));
-        // }else{
-        //   flash_crc = 0;
-        // }
 				api_status(SENSOR_FLASH, 1, flash_data, flash_data_ascii);
       }
        if(sdi_api_rtc_start){
-				snprintf(rtc_data_ascii, sizeof(rtc_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f", rtc_data[0],rtc_data[1],rtc_data[2],rtc_data[3],rtc_data[4],rtc_data[5]);
-        // if(sdi_api_rtc_crc_en){
-				// 	rtc_crc = (uint32_t) sdi_crc16(rtc_data_ascii, strlen(rtc_data_ascii));
-        // }else{
-        //   rtc_crc = 0;
-        // }
+				snprintf(rtc_data_ascii, sizeof(rtc_data_ascii), "%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f%+08.3f",
+                rtc_data[0],rtc_data[1],rtc_data[2],rtc_data[3],rtc_data[4],rtc_data[5]);
 				api_status(SENSOR_RTC, 1, rtc_data, rtc_data_ascii);
       }
 			vTaskDelay(100);
@@ -353,8 +326,6 @@ void led_task(){
 		vTaskDelay(100);
 		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_5);
 		vTaskDelay(100);
-		//HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
-		//vTaskDelay(100);
 	}
 }
 
@@ -784,23 +755,6 @@ static void USART1_LPUART_Init(void){
 //    HAL_NVIC_SetPriority(LPUART1_IRQn, 0, 1);
 //    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
 		
-}
-
-static void CRC_Init(void){
-  hcrc.Instance = CRC;
-  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
-
-  hcrc.Init.CRCLength = CRC_POLYLENGTH_16B;
-  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
-  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_DISABLE;
-  hcrc.Init.GeneratingPolynomial = 0xA001;
-  hcrc.Init.InitValue = DEFAULT_INIT_VALUE_ENABLE;
-  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
-  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
-  
-  if(HAL_CRC_Init(&hcrc) != HAL_OK){
-    Error_Handler();
-  }
 }
 
 static void sdi_init(void){
