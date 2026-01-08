@@ -4,10 +4,10 @@ feature remaining: the data ready is asserted as soon as start is asserted. the 
                    between start and data ready signal. this delay should be managed in the library
                    and the a<><> should be provided to master whenever data is ready to be read
 */
-
 #include "sdi_cli.h"
 #include "string.h"
 #include "stdio.h"
+
 #define SDI_ERROR 1
 
 static char sdi_rx[20];
@@ -16,31 +16,57 @@ full_command command;
 uint8_t len;
 extern UART_HandleTypeDef hlpuart1;
 
+
+SENSOR_ID sensor_tags;
+
 typedef struct{
-    uint8_t address;    //address of sensor
-    uint8_t busy;       //1-busy, 0-idle
-    uint8_t data_ready; //1-data_ready, 0-data not ready
-    uint8_t error;      //1-error, 0-no errors
+    char address;        //address of sensor
+    uint8_t sub_address;       //like x from aMx or x from aMCx
+    uint8_t busy;           //1-busy, 0-idle
+    uint8_t data_ready;     //1-data_ready, 0-data not ready
+    uint8_t error;          //1-error, 0-no errors
     float data[6];          //actual measured data values
     uint8_t* tx_data_ptr;   //pointer to the tx data buffer containing ascii to send
-    uint32_t crc;
+    uint16_t crc;           //crc
 }sensor_status;
-sensor_status status_t;
 
 typedef struct{
     uint8_t blocking;   //1-execution requires blocking, 0-concurrency allowed
     uint8_t start;      //start bit
+    uint8_t sub_reading;    //0-all sensor data, 1-only one type of data. for aM1 command. eg:only roll from imu, not pitch or yaw
     uint8_t crc_en;        //1-crc required, 0-crc not required
     uint8_t read_type;  //0-single read, 1-mass read
     uint8_t terminate;  //terminate
 }sensor_state_var;
-sensor_state_var state_var_t;
 
 typedef struct{
     sensor_state_var var;
     sensor_status status;
+    SENSOR_ID tag;
 }sensor;
 static sensor sdi_imu, sdi_flash, sdi_radar, sdi_charger, sdi_rtc, sdi_generic;
+
+//ID sensor tags
+static sensor sdi_imu = {
+    .status.address = 'a',
+    .tag = SENSOR_IMU
+};
+static sensor sdi_charger = {
+    .status.address = 'b',
+    .tag = SENSOR_CHARGER
+};
+static sensor sdi_radar = {
+    .status.address = 'c',
+    .tag = SENSOR_RADAR
+};
+static sensor sdi_flash = {
+    .status.address = 'd',
+    .tag = SENSOR_FLASH
+};
+static sensor sdi_rtc = {
+    .status.address = 'e',
+    .tag = SENSOR_RTC
+};
 
 static void sensor_set(sensor);
 static void sensor_start(sensor);
@@ -50,6 +76,9 @@ static void reset(sensor*);
 static uint8_t sensor_status_get(sensor);
 static void service_request_msg(char , uint16_t, uint8_t);
 static void abort_msg(char , uint16_t, uint8_t);
+static void address_changer(char, char);
+static uint8_t address_mapper(char addr);
+static void sensor_address_msg(char address);
 
 volatile uint8_t sdi_api_imu_start, sdi_api_charger_start, sdi_api_rtc_start, sdi_api_flash_start, sdi_api_radar_start; //interface variables
 volatile uint8_t sdi_api_imu_crc_en, sdi_api_charger_crc_en, sdi_api_radar_crc_en, sdi_api_rtc_crc_en, sdi_api_flash_crc_en;
@@ -58,15 +87,17 @@ volatile uint8_t sdi_api_imu_dr_arr[10], sdi_api_charger_dr_arr[10], sdi_api_rtc
 volatile uint8_t blocking_measurement = 0;
 volatile uint8_t non_blocking_measurement = 0;
 
+// sensor with default initial addresses
+
+
 static uint32_t command_to_hex(full_command *command){
     return ((uint32_t)command->address << 24) | ((uint32_t)command->c2 << 16) |
            ((uint32_t)command->c3 << 8)  | ((uint32_t)command->c4);
 }
 
-void sdi_cmd_send(char * cmd, uint8_t len){
-    HAL_UART_Transmit(&hlpuart1, (uint8_t *)cmd, len, HAL_MAX_DELAY);
-}
-
+// void sdi_cmd_send(char * cmd, uint8_t len){
+//     HAL_UART_Transmit(&hlpuart1, (uint8_t *)cmd, len, HAL_MAX_DELAY);
+// }
 
 //receive ascii command until '!' is detected and return received no. of bytes
 //the ! is ignored after parsing. and while decoding, 'a' is also ignored after storing it as adress in command
@@ -87,14 +118,21 @@ uint8_t sdi_cmd_receive(char * cmd){
         command_rx_flag = 0;
 		return 0;
     } else{
-			i = 0;
+		i = 0;
         //error case - implement after first basic test
 		return 0;
     }
 }
 
 
-
+/*
+aMC1
+c1 -> identify whether it is a "?" or character other than "?" (unnecessary. to be removed later)
+address -> (a)
+c2 -> M
+C3 -> C
+C4 -> 1
+*/
 void sdi_parse(char *cmd_raw, full_command *command, uint8_t cmd_len){
     command -> c1 = (cmd_raw[0] == '?') ? COMMAND_QUERY: COMMAND_ACTION;
     command->address = (cmd_raw[0] >= '0' && cmd_raw[0] <= 'f') ? cmd_raw[0] : '0'; //store invalid address. execution will check and cancel
@@ -171,51 +209,56 @@ void sdi_decode(full_command *command, uint8_t len){
     4 length instructions are easy as we can separate the text and number. since MC1 decoding may call MC which is case for three length, so, for four length, i added one extra byte to separate it. now MC from three and 
     MC from 4  length instruction have separate meaning in the switch case execution 
 */
+
 static sensor config;
 
 void sdi_execute(uint32_t instr, full_command *command){
     switch (instr){
     case (0x61000000): //acknowledge address a!
         /*code*/
-        SDI_TX();
-        HAL_UART_Transmit(&hlpuart1, (uint8_t*)"ack addr", sizeof("ack addr"), HAL_MAX_DELAY);
-        SDI_RX();
         //use command.address to execute from here
+        if(address_mapper(command->address) != SENSOR_UNKNOWN){
+            sensor_address_msg(command->address);
+        }
     break;
-    case (0x3F000000):
-        SDI_TX();
-        HAL_UART_Transmit(&hlpuart1, (uint8_t*)"? mark", sizeof("? mark"), HAL_MAX_DELAY);
-        SDI_RX();
+    case (0x3F000000): //address query ?!
+        sensor_address_msg(sdi_imu.status.address);
+        sensor_address_msg(sdi_charger.status.address);
+        sensor_address_msg(sdi_radar.status.address);
+        sensor_address_msg(sdi_flash.status.address);
+        sensor_address_msg(sdi_rtc.status.address);
     break;
     case(0x00411000): //change address command - aAb!
-        SDI_TX();
-        HAL_UART_Transmit(&hlpuart1, (uint8_t*)"change addr aAb!", sizeof("change addr aAb!"), HAL_MAX_DELAY);
-        SDI_RX();
+        if(address_mapper(command->address) == SENSOR_UNKNOWN){
+            break;//do nothing if original address mismatches before changing
+        }
+        address_changer(command->address, command->c3);
+        //check if changed address still maps to a valid sensor. if yes, revert back the changes
+        if(address_mapper(command->c3) == SENSOR_UNKNOWN) address_changer(command->c3, command->address);
+        sensor_address_msg(command->address);
     break;
 
     case(0x004D0000): //start measurement aM
         if(config.var.blocking == 1){ //comparing old state with existing state. do not allow new sensor request if old is not completed
             if(command->address != config.status.address){ //but allow old sensor request
-                SDI_TX();
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"not allowed\n", sizeof("not allowed\n"), HAL_MAX_DELAY);
-                SDI_RX();
+                abort_msg((char)command->address, 2, 1);
                 break;
             }else{
                 sensor_reset(config); //reset sensor on identical repeated measure command like aM! after previous aM!
-                abort_msg((char)(command->address), 2, 1);
+                service_request_msg((char)(command->address), 2, 1);
             }
         }
+        config.status.sub_address = 0;
         config.status.address = command->address;
         config.status.busy = 1;	//config by data read function
         config.status.data_ready = 0; //config by status function
+        config.var.sub_reading = 0;
         config.status.error = 0; //config not implemented
-        //config.status.data = 0; //config by data read function
         config.var.blocking = 1; //config here
         config.var.read_type = 0; //single byte read
         config.var.start = 1; //config here, checked on sensor_set, modified on data read
         config.var.terminate = 0; //config not implemented
         config.var.crc_en = 0;
-        //blocking_measurement = 1;
 
         sensor_set(config); //save and check sensor configuration. if target sensor is already busy, nothing happens
         sensor_start(config); //start mesaurement. if sensor busy, restart (in concurrent, if sensor busy then terminate)
@@ -224,19 +267,20 @@ void sdi_execute(uint32_t instr, full_command *command){
     case(0x004D4300): //start measurement and request crc aMC
         if(config.var.blocking == 1){ 
             if(command->address != config.status.address){ 
-                SDI_TX();
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"not allowed\n", sizeof("not allowed\n"), HAL_MAX_DELAY);
-                SDI_RX();
+                abort_msg(config.status.address, 2, 1);
                 break;
             }else{
                 sensor_reset(config);
+                service_request_msg((char)(command->address), 2, 1);
             }
         }
+        config.status.sub_address = 0;
         config.status.address = command->address;
         config.status.busy = 1;
         config.status.data_ready = 0;
         config.status.error = 0;
         config.var.blocking = 1;
+        config.var.sub_reading = 0;
         config.var.crc_en = 1;
         config.var.read_type = 1;
         config.var.start = 1;
@@ -247,11 +291,9 @@ void sdi_execute(uint32_t instr, full_command *command){
 
     case(0x00441000): //send data aD0...aD9
         config.status.address = command->address;
-        SDI_TX();
         if((sensor_status_get(config) == 0)){ //if data not ready then respond with address and stop measurement
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"data not ready \"address\" \n", sizeof("data not ready \"address\" \n"), HAL_MAX_DELAY);
+            service_request_msg(config.status.address, 002,1);
         }
-        SDI_RX();
 		if(sensor_status_get(config) == 1){
             sensor_send(config);
 		    sensor_reset(config);
@@ -259,15 +301,58 @@ void sdi_execute(uint32_t instr, full_command *command){
     break;
 
     case(0x004D1000): //additional measurements aM0....aM9
-        SDI_TX();
-        HAL_UART_Transmit(&hlpuart1, (uint8_t*)"not implemented aMx", sizeof("not implemented aMx"), HAL_MAX_DELAY);
-        SDI_RX();
+        if(config.var.blocking == 1){
+            if(command->address != config.status.address){
+                abort_msg((char)command->address, 2, 1);
+                break;
+            }else{
+                sensor_reset(config);
+                service_request_msg((char)(command->address), 2, 1);
+            }
+        }
+        config.status.sub_address = (command -> c3) - '0'; //converting ascii number to integer value
+        config.var.sub_reading = 1;
+
+        config.status.address = command->address;
+        config.status.busy = 1;
+        config.status.data_ready = 0;
+        config.status.error = 0;
+        config.var.blocking = 1; 
+        config.var.read_type = 0;
+        config.var.start = 1;
+        config.var.terminate = 0; 
+        config.var.crc_en = 0;
+
+        sensor_set(config); 
+        sensor_start(config);
     break;
 
     case(0x004D4310): //additional measurements and request CRC aMC1..aMC9
-        SDI_TX();
-        HAL_UART_Transmit(&hlpuart1, (uint8_t*)"not implemented aMCx", sizeof("not implemented aMCx"), HAL_MAX_DELAY);
-        SDI_RX();
+        if(config.var.blocking == 1){
+            if(command->address != config.status.address){
+                abort_msg((char)command->address, 2, 1);
+                break;
+            }else{
+                sensor_reset(config);
+                service_request_msg((char)(command->address), 2, 1);
+            }
+        }
+        config.status.sub_address = (command -> c4) - '0'; //converting ascii  number to integer value;
+        config.var.sub_reading = 1;
+
+        config.status.address = command->address;
+        config.status.busy = 1;
+        config.status.data_ready = 0;
+        config.status.error = 0;
+        config.var.blocking = 1; 
+        config.var.read_type = 0;
+        config.var.start = 1;
+        config.var.terminate = 0; 
+        config.var.crc_en = 1;
+
+        sensor_set(config); 
+        sensor_start(config);
+
     break;
 
     case(0x00560000): //additional verification aV
@@ -288,7 +373,7 @@ void sdi_execute(uint32_t instr, full_command *command){
         SDI_RX();
     break;
 
-    case(0x00431000): //additional conncurrent measurements aC0...aC9
+    case(0x00431000): //additional concurrent measurements aC0...aC9
         SDI_TX();
         HAL_UART_Transmit(&hlpuart1, (uint8_t*)"not implemented aCx", sizeof("not implemented aCx"), HAL_MAX_DELAY);
         SDI_RX();
@@ -319,25 +404,40 @@ void sdi_main(void){
 	sdi_decode(&command, len);
 	command_rx_flag = 0;
 }
-
-
 static void sensor_set(sensor config){
-    switch (config.status.address)
+    sensor_tags = address_mapper(config.status.address);
+    switch (sensor_tags)
     {
-        case 'a':
+        case SENSOR_IMU:
 			sdi_imu = config;
+            if(sdi_imu.status.sub_address > 3 && sdi_imu.var.sub_reading == 1){
+                sdi_imu.status.sub_address = 2;
+                sensor_address_msg(sdi_imu.status.address);
+            }
         break;
-        case 'b':
+        case SENSOR_CHARGER:
             sdi_charger = config;
+            if(sdi_charger.status.sub_address > 6 && sdi_charger.var.sub_reading == 1){
+                sdi_charger.status.sub_address = 5;
+                sensor_address_msg(sdi_charger.status.address);
+            }
         break;
-        case 'c':
+        case SENSOR_RADAR:
             sdi_radar = config;
+            if(sdi_radar.status.sub_address > 6 && sdi_radar.var.sub_reading == 1){
+                sdi_radar.status.sub_address = 5;
+                sensor_address_msg(sdi_radar.status.address);
+            }
         break;
-        case 'd':
+        case SENSOR_FLASH:
             sdi_flash= config;
         break;
-        case 'e':
+        case SENSOR_RTC:
            sdi_rtc= config;
+            if(sdi_rtc.status.sub_address > 6 && sdi_rtc.var.sub_reading == 1){
+                sdi_rtc.status.sub_address = 5;
+                sensor_address_msg(sdi_rtc.status.address);
+            }
         break;
         default:
         break;
@@ -346,58 +446,61 @@ static void sensor_set(sensor config){
 }
 
 void sensor_start(sensor config){
-    switch (config.status.address)
+    sensor_tags = address_mapper(config.status.address);
+    switch (sensor_tags)
     {
-        case 'a':
+        case SENSOR_IMU:
             sdi_api_imu_start = 1;
             sdi_api_imu_crc_en = sdi_imu.var.crc_en;
-            service_request_msg('a',002,1);//send back a response
+            service_request_msg(config.status.address,002,1);//send back a response
         break;
-        case 'b':
+        case SENSOR_CHARGER:
             sdi_api_charger_start = 1;
             sdi_api_charger_crc_en = sdi_charger.var.crc_en;
-            service_request_msg('b',002,1);
+            service_request_msg(config.status.address,002,1);
         break;
-        case 'c':
+        case SENSOR_RADAR:
             sdi_api_radar_start = 1;
             sdi_api_radar_crc_en = sdi_radar.var.crc_en;
-            service_request_msg('c',002,1);
+            service_request_msg(config.status.address,002,1);
         break;
-        case 'd':
+        case SENSOR_FLASH:
 			sdi_api_flash_start = 1;
             sdi_api_flash_crc_en = sdi_flash.var.crc_en;
-            service_request_msg('d',002,1);
+            service_request_msg(config.status.address,002,1);
         break;
-        case 'e':
+        case SENSOR_RTC:
             sdi_api_rtc_start = 1;
             sdi_api_rtc_crc_en = sdi_rtc.var.crc_en;
-            service_request_msg('e',002,1);
+            service_request_msg(config.status.address,002,1);
         break;
         default:
+            abort_msg(config.status.address, 2, 1);
         break;
     }
 }
 
 void sensor_reset(sensor conf){
-		switch (conf.status.address)
+    sensor_tags = address_mapper(config.status.address);
+	switch (sensor_tags)
     {
-        case 'a':
+        case SENSOR_IMU:
             sdi_api_imu_start = 0;
             reset(&sdi_imu);
         break;
-        case 'b':
+        case SENSOR_CHARGER:
             sdi_api_charger_start = 0;
             reset(&sdi_charger);
         break;
-        case 'c':
+        case SENSOR_RADAR:
             sdi_api_radar_start = 0;           
             reset(&sdi_radar); 
         break;
-        case 'd':
+        case SENSOR_FLASH:
             sdi_api_flash_start = 0;           
             reset(&sdi_flash); 
         break;
-        case 'e':
+        case SENSOR_RTC:
             sdi_api_rtc_start = 0;       
             reset(&sdi_rtc); 
         break;
@@ -407,49 +510,50 @@ void sensor_reset(sensor conf){
 		reset(&config);
 }
 
-void api_status(char sensor, uint8_t data_ready, float* data, uint32_t crc, char* ascii_ptr){
-    char tx_buf[100];
-	switch (sensor)
+void api_status(SENSOR_ID tags, uint8_t data_ready, float* data, char* ascii_ptr){
+    sensor_tags = address_mapper(config.status.address);
+    //for now, store data in both float and ascii format
+	switch (sensor_tags)
 		{
-        case 'a':
+        case SENSOR_IMU:
             sdi_imu.status.data_ready = data_ready;
-            sdi_imu.status.crc = crc;
+            // sdi_imu.status.crc = crc;
             sdi_imu.status.tx_data_ptr = ascii_ptr;
-            sdi_imu.status.data[0] = data[0];
-            sdi_imu.status.data[1] = data[1];
-            sdi_imu.status.data[2] = data[2];
+            sdi_imu.status.data[0] = data[0]; //roll
+            sdi_imu.status.data[1] = data[1]; //pitch
+            sdi_imu.status.data[2] = data[2]; //yaw
         break;
-        case 'b':
+        case SENSOR_CHARGER:
             sdi_charger.status.data_ready = data_ready;
-            sdi_charger.status.crc = crc;
+            // sdi_charger.status.crc = crc;
             sdi_charger.status.tx_data_ptr = ascii_ptr;
-            sdi_charger.status.data[0] = data[0];
+            sdi_charger.status.data[0] = data[0]; 
             sdi_charger.status.data[1] = data[1];
             sdi_charger.status.data[2] = data[2];
             sdi_charger.status.data[3] = data[3];
             sdi_charger.status.data[4] = data[4];
             sdi_charger.status.data[5] = data[5];
         break;
-        case 'c':
+        case SENSOR_RADAR:
             sdi_radar.status.data_ready = data_ready;
-            sdi_radar.status.crc = crc;
+            // sdi_radar.status.crc = crc;
             sdi_radar.status.tx_data_ptr = ascii_ptr;
-            sdi_radar.status.data[0] = data[0];
-            sdi_radar.status.data[1] = data[1];
-            sdi_radar.status.data[2] = data[2];
-            sdi_radar.status.data[3] = data[3];
-            sdi_radar.status.data[4] = data[4];
-            sdi_radar.status.data[5] = data[5];
+            sdi_radar.status.data[0] = data[0]; //dist1
+            sdi_radar.status.data[1] = data[1]; //str1
+            sdi_radar.status.data[2] = data[2]; //dist2
+            sdi_radar.status.data[3] = data[3]; //str2
+            sdi_radar.status.data[4] = data[4]; //dist3
+            sdi_radar.status.data[5] = data[5]; //str3
             break;
-        case 'd':
+        case SENSOR_FLASH:
             sdi_flash.status.data_ready = data_ready;
-            sdi_flash.status.crc = crc;
+            // sdi_flash.status.crc = crc;
             sdi_flash.status.tx_data_ptr = ascii_ptr;
             sdi_flash.status.data[0] = data[0];
         break;
-        case 'e':
+        case SENSOR_RTC:
             sdi_rtc.status.data_ready = data_ready;
-            sdi_rtc.status.crc = crc;
+            // sdi_rtc.status.crc = crc;
             sdi_rtc.status.tx_data_ptr = ascii_ptr;
             sdi_rtc.status.data[0] = data[0];
             sdi_rtc.status.data[1] = data[1];
@@ -465,20 +569,22 @@ void api_status(char sensor, uint8_t data_ready, float* data, uint32_t crc, char
 
 //measurement status - the sensor must have start bit 1 and must have data ready 1 to give a valid status  
 static uint8_t sensor_status_get(sensor config){
-    switch(config.status.address){
-        case 'a':
+    sensor_tags = address_mapper(config.status.address);
+	switch (sensor_tags)
+    {
+        case SENSOR_IMU:
             if(sdi_imu.status.data_ready && sdi_imu.var.start) return 1; else return 0;
         break;
-        case 'b':
+        case SENSOR_CHARGER:
             if(sdi_charger.status.data_ready && sdi_charger.var.start) return 1; else return 0;
         break;
-        case 'c':
+        case SENSOR_RADAR:
             if(sdi_radar.status.data_ready && sdi_radar.var.start) return 1; else return 0;
         break;
-        case 'd':
+        case SENSOR_FLASH:
             if(sdi_flash.status.data_ready && sdi_flash.var.start) return 1; else return 0;
         break;
-        case 'e':
+        case SENSOR_RTC:
             if(sdi_rtc.status.data_ready && sdi_rtc.var.start) return 1; else return 0;
         break;
         default:
@@ -487,95 +593,93 @@ static uint8_t sensor_status_get(sensor config){
     }
 }
 
+uint32_t imu_crc, radar_crc, charger_crc, rtc_crc, flash_crc;
 void sensor_send(sensor config){
     char tx_buf[100];
     uint32_t crc_ascii;
     uint8_t crc_buf[3];
     char crc_dbg[16];
-
-	switch (config.status.address)
-    {
-        case 'a':
+    sensor_tags = address_mapper(config.status.address);
+	switch (sensor_tags)
+    { //instead of if, multiplication with 1 or 0 is done to reduce no. of if statements while making code as much as readable
+        case SENSOR_IMU:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"imu_data: ", sizeof("imu_data: "), HAL_MAX_DELAY);
-            HAL_UART_Transmit(&hlpuart1, sdi_imu.status.tx_data_ptr, strlen(sdi_imu.status.tx_data_ptr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_imu.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, sdi_imu.status.tx_data_ptr + ((8 * sdi_imu.status.sub_address) * sdi_imu.var.sub_reading),
+                                strlen(sdi_imu.status.tx_data_ptr) - 16 * sdi_imu.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_imu.var.crc_en == 1){
+                //to cover crc claculation case for both aM and aM0 type of data
+                sdi_imu.status.crc = sdi_crc16(sdi_imu.status.tx_data_ptr + 8 * sdi_imu.status.sub_address,
+                                                strlen(sdi_imu.status.tx_data_ptr)-16 * sdi_imu.var.sub_reading);
                 crc_ascii = sdi_crc_ascii(sdi_imu.status.crc);
                 crc_buf[0] = (crc_ascii >> 16) & 0xFF;
                 crc_buf[1] = (crc_ascii >> 8)  & 0xFF;
                 crc_buf[2] =  crc_ascii & 0xFF;
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
+                //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
                 HAL_UART_Transmit(&hlpuart1, crc_buf, 3, HAL_MAX_DELAY);
-                
             }
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\r\n", sizeof("\r\n"), HAL_MAX_DELAY);
             SDI_RX();
         break;
-        case 'b':
-            // snprintf(tx_buf, sizeof(tx_buf), "charger: VBAT=%+0.3f VSYS=%+0.3f VBUS=%+0.3f IBAT=%+0.3f IBUS=%+0.3f BAT_TEMP=%+0.3f\r\n", sdi_charger.status.data[0],
-            //                                                                         sdi_charger.status.data[1],
-            //                                                                         sdi_charger.status.data[2],
-            //                                                                         sdi_charger.status.data[3],
-            //                                                                         sdi_charger.status.data[4],
-            //                                                                         sdi_charger.status.data[5]);
+        case SENSOR_CHARGER:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"charger_data: ", sizeof("charger_data: "), HAL_MAX_DELAY);
-            HAL_UART_Transmit(&hlpuart1, sdi_charger.status.tx_data_ptr, strlen(sdi_imu.status.tx_data_ptr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_charger.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, sdi_charger.status.tx_data_ptr + ((8 * sdi_charger.status.sub_address) * sdi_charger.var.sub_reading), 
+                                strlen(sdi_charger.status.tx_data_ptr) - 40 * sdi_charger.var.sub_reading, HAL_MAX_DELAY);
            if(sdi_charger.var.crc_en == 1){
+                sdi_charger.status.crc = (uint32_t) sdi_crc16(sdi_charger.status.tx_data_ptr + 8 * sdi_charger.status.sub_address,
+                                                                strlen(sdi_charger.status.tx_data_ptr)-16 * sdi_charger.var.sub_reading);
                 crc_ascii = sdi_crc_ascii(sdi_charger.status.crc);
                 crc_buf[0] = (crc_ascii >> 16) & 0xFF;
                 crc_buf[1] = (crc_ascii >> 8)  & 0xFF;
                 crc_buf[2] =  crc_ascii & 0xFF;
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
+                //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
                 HAL_UART_Transmit(&hlpuart1, crc_buf, 3, HAL_MAX_DELAY);
             }
-            // HAL_UART_Transmit(&hlpuart1, (uint8_t*)tx_buf, strlen(tx_buf), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\r\n", sizeof("\r\n"), HAL_MAX_DELAY);
             SDI_RX();
         break;
-        case 'c':
-            // snprintf(tx_buf, sizeof(tx_buf), "distances: D1=%+0.3f S1=%+0.3f D2=%+0.3f S2=%+0.3f D3=%+0.3f S3=%+0.3f\r\n", sdi_radar.status.data[0],
-            //                                                                         sdi_radar.status.data[1],
-            //                                                                         sdi_radar.status.data[2],
-            //                                                                         sdi_radar.status.data[3],
-            //                                                                         sdi_radar.status.data[4],
-            //                                                                         sdi_radar.status.data[5]);
+        case SENSOR_RADAR:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"radar_data: ", sizeof("radar_data: "), HAL_MAX_DELAY);
-            HAL_UART_Transmit(&hlpuart1, sdi_radar.status.tx_data_ptr, strlen(sdi_radar.status.tx_data_ptr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_radar.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, sdi_radar.status.tx_data_ptr + ((8 * sdi_radar.status.sub_address) * sdi_radar.var.sub_reading),
+                                strlen(sdi_radar.status.tx_data_ptr) - 40 * sdi_radar.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_charger.var.crc_en == 1){
+                sdi_radar.status.crc = (uint32_t) sdi_crc16(sdi_radar.status.tx_data_ptr + 8 * sdi_radar.status.sub_address,
+                                                            strlen(sdi_radar.status.tx_data_ptr)-16 * sdi_radar.var.sub_reading);
                 crc_ascii = sdi_crc_ascii(sdi_radar.status.crc);
                 crc_buf[0] = (crc_ascii >> 16) & 0xFF;
                 crc_buf[1] = (crc_ascii >> 8) & 0xFF;
                 crc_buf[2] =  crc_ascii & 0xFF;
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
+                //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
                 HAL_UART_Transmit(&hlpuart1, crc_buf, 3, HAL_MAX_DELAY);
             }
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\r\n", sizeof("\r\n"), HAL_MAX_DELAY);
             SDI_RX();
         break;
-        case 'd':
+        case SENSOR_FLASH:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"flash data: ", sizeof("flash_data: "), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)'d', sizeof('d'), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_flash.status.data, sizeof(uint32_t), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\n", sizeof("\n"), HAL_MAX_DELAY);
             SDI_RX();
         break;
-        case 'e':
-            // snprintf(tx_buf, sizeof(tx_buf), "rtc: sec=%+0.3f min=%+0.3f hour=%+0.3f year=%+0.3f month=%+0.3f day=%+0.3f\r\n", sdi_rtc.status.data[0],
-            //                                                                         sdi_rtc.status.data[1],
-            //                                                                         sdi_rtc.status.data[2],
-            //                                                                         sdi_rtc.status.data[3],
-            //                                                                         sdi_rtc.status.data[4],
-            //                                                                         sdi_rtc.status.data[5]);
+        case SENSOR_RTC:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"rtc: ", sizeof("rtc: "), HAL_MAX_DELAY);
-            HAL_UART_Transmit(&hlpuart1, sdi_rtc.status.tx_data_ptr, strlen(sdi_rtc.status.tx_data_ptr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_rtc.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, sdi_rtc.status.tx_data_ptr + ((8 * sdi_rtc.status.sub_address) * sdi_rtc.var.sub_reading),
+                                strlen(sdi_rtc.status.tx_data_ptr) - 40 * sdi_rtc.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_rtc.var.crc_en == 1){
+                sdi_rtc.status.crc = (uint32_t) sdi_crc16(sdi_rtc.status.tx_data_ptr + 8 * sdi_rtc.status.sub_address,
+                                                            strlen(sdi_rtc.status.tx_data_ptr)-16 * sdi_rtc.var.sub_reading);
                 crc_ascii = sdi_crc_ascii(sdi_rtc.status.crc);
                 crc_buf[0] = (crc_ascii >> 16) & 0xFF;
                 crc_buf[1] = (crc_ascii >> 8)  & 0xFF;
                 crc_buf[2] =  crc_ascii & 0xFF;
-                HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
+                //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"crc: ", strlen("crc: "), HAL_MAX_DELAY);
                 HAL_UART_Transmit(&hlpuart1, crc_buf, 3, HAL_MAX_DELAY);
             }
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\r\n", sizeof("\r\n"), HAL_MAX_DELAY);
             SDI_RX();
         break;
         default:
@@ -586,6 +690,9 @@ void sensor_send(sensor config){
 
 static void reset(sensor* sensor){
 	sensor->status.busy = 0;
+    sensor->status.sub_address = 0;
+    sensor->status.crc = 0;
+    sensor->status.tx_data_ptr = 0;
 	sensor->status.data[0] = 0;
 	sensor->status.data[1] = 0;
 	sensor->status.data[2] = 0;
@@ -595,6 +702,7 @@ static void reset(sensor* sensor){
 	sensor->status.data_ready = 0;
 	sensor->status.error = 0;
 	sensor->var.blocking = 0;
+    sensor->var.sub_reading = 0;
 	sensor->var.read_type = 0;
 	sensor->var.start = 0;
 	sensor->var.terminate = 0;
@@ -614,12 +722,18 @@ static void abort_msg(char address, uint16_t time, uint8_t number){ //same as se
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)tx_buf, strlen(tx_buf), HAL_MAX_DELAY);
     SDI_RX();
 }
-
-uint32_t sdi_crc_ascii(uint32_t int_crc)
+static void sensor_address_msg(char address){
+    char tx_buf[10];
+    snprintf(tx_buf, sizeof(tx_buf), "%c\r\n", address);
+    SDI_TX();
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)tx_buf, strlen(tx_buf), HAL_MAX_DELAY);
+    SDI_RX();
+}
+uint32_t sdi_crc_ascii(uint16_t int_crc)
 {
     uint32_t ascii = 0;
 
-    uint8_t c1 = 0x40 | ((int_crc >> 12) & 0x0F);
+    uint8_t c1 = 0x40 | ((int_crc >> 12));
     uint8_t c2 = 0x40 | ((int_crc >> 6)  & 0x3F);
     uint8_t c3 = 0x40 | (int_crc & 0x3F);
 
@@ -646,3 +760,36 @@ uint16_t sdi_crc16(char *data, uint16_t len)
     return crc;
 }
 
+static uint8_t address_mapper(char addr){
+    if(addr == sdi_imu.status.address ) return SENSOR_IMU;
+    if(addr == sdi_charger.status.address) return SENSOR_CHARGER;
+    if(addr == sdi_radar.status.address) return SENSOR_RADAR;
+    if(addr == sdi_flash.status.address) return SENSOR_FLASH;
+    if(addr == sdi_rtc.status.address) return SENSOR_RTC;
+
+    return SENSOR_UNKNOWN;
+}
+static void address_changer(char old_addr, char new_addr){
+    sensor_tags = address_mapper(old_addr);
+    switch (sensor_tags)
+    {
+    case SENSOR_IMU:
+        sdi_imu.status.address = new_addr;
+    break;
+    case SENSOR_CHARGER:
+        sdi_charger.status.address = new_addr;
+    break;
+    case SENSOR_RADAR:
+        sdi_radar.status.address = new_addr;
+    break;
+    case SENSOR_FLASH:
+        sdi_flash.status.address = new_addr;
+    break;
+    case SENSOR_RTC:
+        sdi_rtc.status.address = new_addr;
+    break;
+    
+    default:
+        break;
+    }
+}
