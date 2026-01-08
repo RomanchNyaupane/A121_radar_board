@@ -22,11 +22,11 @@
 #include "acc_sensor.h"
 #include "acc_version.h"
 #include "stm32wbxx_hal.h"
-#include "stm32wbxx_hal_uart.h"
+//#include "stm32wbxx_hal_uart.h"
 #include "string.h"
 
 //UART_HandleTypeDef huart1;
-
+extern float radar_data[6];
 typedef enum
 {
 	DISTANCE_PRESET_CONFIG_NONE = 0,
@@ -81,7 +81,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	const char* version = acc_version_get();
 	int msg_len = snprintf(version_msg, sizeof(version_msg), "Acconeer software version %s\n", version);
 	if (msg_len > 0) {
-    HAL_UART_Transmit(&huart1, (uint8_t*)version_msg, msg_len, HAL_MAX_DELAY);
+    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)version_msg, msg_len, HAL_MAX_DELAY);
 	}
 	
 	const acc_hal_a121_t *hal = acc_hal_rss_integration_get_implementation();
@@ -95,7 +95,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	if (resources.config == NULL)
 	{
 		//printf("acc_detector_distance_config_create() failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"Assembly test: Memory allocation failed\n", strlen("Assembly test: Memory allocation failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Assembly test: Memory allocation failed\n", strlen("Assembly test: Memory allocation failed\n"), HAL_MAX_DELAY);
 		cleanup(&resources);
 		return EXIT_FAILURE;
 	}
@@ -105,7 +105,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	if (!initialize_detector_resources(&resources))
 	{
 		//printf("Initializing detector resources failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"Initializing detector resources failed\n", strlen("Initializing detector resources failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Initializing detector resources failed\n", strlen("Initializing detector resources failed\n"), HAL_MAX_DELAY);
 
 		cleanup(&resources);
 		return EXIT_FAILURE;
@@ -122,7 +122,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	if (resources.sensor == NULL)
 	{
 		//printf("acc_sensor_create() failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"acc_sensor_create() failed\n", strlen("acc_sensor_create() failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_sensor_create() failed\n", strlen("acc_sensor_create() failed\n"), HAL_MAX_DELAY);
 
 		cleanup(&resources);
 		return EXIT_FAILURE;
@@ -133,7 +133,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	if (!do_sensor_calibration(resources.sensor, &sensor_cal_result, resources.buffer, resources.buffer_size))
 	{
 		//printf("Sensor calibration failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"Sensor calibration failed\n", strlen("Sensor calibration failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Sensor calibration failed\n", strlen("Sensor calibration failed\n"), HAL_MAX_DELAY);
 
 		cleanup(&resources);
 		return EXIT_FAILURE;
@@ -142,7 +142,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 	if (!do_full_detector_calibration(&resources, &sensor_cal_result))
 	{
 		//printf("Detector calibration failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"Detector calibration failed\n", strlen("Detector calibration failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Detector calibration failed\n", strlen("Detector calibration failed\n"), HAL_MAX_DELAY);
 
 		cleanup(&resources);
 		return EXIT_FAILURE;
@@ -155,7 +155,7 @@ int acc_example_detector_distance(int argc, char *argv[])
 		if (!do_detector_get_next(&resources, &sensor_cal_result, &result))
 		{
 			//printf("Could not get next result\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"Could not get next result\n", strlen("Could not get next result\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Could not get next result\n", strlen("Could not get next result\n"), HAL_MAX_DELAY);
 
 			cleanup(&resources);
 			return EXIT_FAILURE;
@@ -165,13 +165,13 @@ int acc_example_detector_distance(int argc, char *argv[])
 		if (result.calibration_needed)
 		{
 			//printf("Sensor recalibration and detector calibration update needed ... \n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"Sensor recalibration and detector calibration update needed ... \n", strlen("Sensor recalibration and detector calibration update needed ... \n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Sensor recalibration and detector calibration update needed ... \n", strlen("Sensor recalibration and detector calibration update needed ... \n"), HAL_MAX_DELAY);
 
 			
 			if (!do_sensor_calibration(resources.sensor, &sensor_cal_result, resources.buffer, resources.buffer_size))
 			{
 				//printf("Sensor calibration failed\n");
-				HAL_UART_Transmit(&huart1, (uint8_t*)"Sensor calibration failed\n", strlen("Sensor calibration failed\n"), HAL_MAX_DELAY);
+				//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Sensor calibration failed\n", strlen("Sensor calibration failed\n"), HAL_MAX_DELAY);
 
 				cleanup(&resources);
 				return EXIT_FAILURE;
@@ -181,27 +181,27 @@ int acc_example_detector_distance(int argc, char *argv[])
 			if (!do_detector_calibration_update(&resources, &sensor_cal_result))
 			{
 				//printf("Detector calibration update failed\n");
-				HAL_UART_Transmit(&huart1, (uint8_t*)"Detector calibration update failed\n", strlen("Detector calibration update failed\n"), HAL_MAX_DELAY);
+				//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Detector calibration update failed\n", strlen("Detector calibration update failed\n"), HAL_MAX_DELAY);
 
 				cleanup(&resources);
 				return EXIT_FAILURE;
 			}
 
 			//printf("Sensor recalibration and detector calibration update done!\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"Sensor recalibration and detector calibration update done!\n", strlen("Sensor recalibration and detector calibration update done!\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Sensor recalibration and detector calibration update done!\n", strlen("Sensor recalibration and detector calibration update done!\n"), HAL_MAX_DELAY);
 
 		}
 		else
 		{
 			print_distance_result(&result);
 		}
-		vTaskDelay(500);
+		vTaskDelay(100);
 	}
 
 	cleanup(&resources);
 
 	//printf("Done!\n");
-  HAL_UART_Transmit(&huart1, (uint8_t*)"Done!\n", strlen("Done!\n"), HAL_MAX_DELAY);
+  //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Done!\n", strlen("Done!\n"), HAL_MAX_DELAY);
 
 
 	return EXIT_SUCCESS;
@@ -267,7 +267,7 @@ static bool initialize_detector_resources(distance_detector_resources_t *resourc
 	if (resources->handle == NULL)
 	{
 		//printf("acc_detector_distance_create() failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"acc_detector_distance_create() failed\n", strlen("acc_detector_distance_create() failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_detector_distance_create() failed\n", strlen("acc_detector_distance_create() failed\n"), HAL_MAX_DELAY);
 
 		return false;
 	}
@@ -275,7 +275,7 @@ static bool initialize_detector_resources(distance_detector_resources_t *resourc
 	if (!acc_detector_distance_get_sizes(resources->handle, &(resources->buffer_size), &(resources->detector_cal_result_static_size)))
 	{
 		//printf("acc_detector_distance_get_sizes() failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"acc_detector_distance_get_sizes() failed\n", strlen("acc_detector_distance_get_sizes() failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_detector_distance_get_sizes() failed\n", strlen("acc_detector_distance_get_sizes() failed\n"), HAL_MAX_DELAY);
 
 		return false;
 	}
@@ -284,7 +284,7 @@ static bool initialize_detector_resources(distance_detector_resources_t *resourc
 	if (resources->buffer == NULL)
 	{
 		//printf("sensor buffer allocation failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"sensor buffer allocation failed\n", strlen("sensor buffer allocation failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"sensor buffer allocation failed\n", strlen("sensor buffer allocation failed\n"), HAL_MAX_DELAY);
 
 		return false;
 	}
@@ -293,7 +293,7 @@ static bool initialize_detector_resources(distance_detector_resources_t *resourc
 	if (resources->detector_cal_result_static == NULL)
 	{
 		//printf("calibration buffer allocation failed\n");
-		HAL_UART_Transmit(&huart1, (uint8_t*)"calibration buffer allocation failed\n", strlen("calibration buffer allocation failed\n"), HAL_MAX_DELAY);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"calibration buffer allocation failed\n", strlen("calibration buffer allocation failed\n"), HAL_MAX_DELAY);
 
 		return false;
 	}
@@ -401,7 +401,7 @@ static bool do_detector_get_next(distance_detector_resources_t  *resources,
 		                                   resources->buffer_size))
 		{
 			//printf("acc_detector_distance_prepare() failed\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"acc_detector_distance_prepare() failed\n", strlen("acc_detector_distance_prepare() failed\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_detector_distance_prepare() failed\n", strlen("acc_detector_distance_prepare() failed\n"), HAL_MAX_DELAY);
 
 			return false;
 		}
@@ -409,7 +409,7 @@ static bool do_detector_get_next(distance_detector_resources_t  *resources,
 		if (!acc_sensor_measure(resources->sensor))
 		{
 			//printf("acc_sensor_measure() failed\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"acc_sensor_measure() failed\n", strlen("acc_sensor_measure() failed\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_sensor_measure() failed\n", strlen("acc_sensor_measure() failed\n"), HAL_MAX_DELAY);
 		
 			return false;
 		}
@@ -417,7 +417,7 @@ static bool do_detector_get_next(distance_detector_resources_t  *resources,
 		if (!acc_hal_integration_wait_for_sensor_interrupt(SENSOR_ID, SENSOR_TIMEOUT_MS))
 		{
 			//printf("Sensor interrupt timeout\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"Sensor interrupt timeout\n", strlen("Sensor interrupt timeout\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Sensor interrupt timeout\n", strlen("Sensor interrupt timeout\n"), HAL_MAX_DELAY);
 
 			return false;
 		}
@@ -425,7 +425,7 @@ static bool do_detector_get_next(distance_detector_resources_t  *resources,
 		if (!acc_sensor_read(resources->sensor, resources->buffer, resources->buffer_size))
 		{
 			//printf("acc_sensor_read() failed\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"acc_sensor_read() failed\n", strlen("acc_sensor_read() failed\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_sensor_read() failed\n", strlen("acc_sensor_read() failed\n"), HAL_MAX_DELAY);
 
 			return false;
 		}
@@ -438,7 +438,7 @@ static bool do_detector_get_next(distance_detector_resources_t  *resources,
 		                                   result))
 		{
 			//printf("acc_detector_distance_process() failed\n");
-			HAL_UART_Transmit(&huart1, (uint8_t*)"acc_detector_distance_process() failed\n", strlen("acc_detector_distance_process() failed\n"), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&hlpuart1, (uint8_t*)"acc_detector_distance_process() failed\n", strlen("acc_detector_distance_process() failed\n"), HAL_MAX_DELAY);
 
 			return false;
 		}
@@ -457,40 +457,71 @@ static float *avg_strength; //strength
 
 #define MAX_DETECTIONS 3
 
+#define MA_WINDOW 10
+#define MA_WINDOW 10
+
 static void print_distance_result(const acc_detector_distance_result_t *result)
 {
+    static float dist_ma_buf[MAX_DETECTIONS][MA_WINDOW] = {0};
+    static float dist_ma_sum[MAX_DETECTIONS] = {0};
+
+    static float str_ma_buf[MAX_DETECTIONS][MA_WINDOW] = {0};
+    static float str_ma_sum[MAX_DETECTIONS] = {0};
+
+    static uint8_t ma_idx = 0;
+    static uint8_t ma_count = 0;
+
     float dist_buf[MAX_DETECTIONS]     = {0};
     float strength_buf[MAX_DETECTIONS] = {0};
 
-    /* Copy detected values into fixed-size buffers */
     uint8_t count = result->num_distances;
     if (count > MAX_DETECTIONS)
         count = MAX_DETECTIONS;
 
-    for (uint8_t i = 0; i < count; i++) {
-        dist_buf[i]     = result->distances[i];
-        strength_buf[i] = result->strengths[i];
+    for (uint8_t i = 0; i < count; i++)
+    {
+        dist_ma_sum[i] -= dist_ma_buf[i][ma_idx];
+        dist_ma_buf[i][ma_idx] = result->distances[i];
+        dist_ma_sum[i] += dist_ma_buf[i][ma_idx];
+
+        dist_buf[i] = dist_ma_sum[i] / (ma_count < MA_WINDOW ? (ma_count + 1) : MA_WINDOW);
+
+        str_ma_sum[i] -= str_ma_buf[i][ma_idx];
+        str_ma_buf[i][ma_idx] = result->strengths[i];
+        str_ma_sum[i] += str_ma_buf[i][ma_idx];
+
+        strength_buf[i] = str_ma_sum[i] / (ma_count < MA_WINDOW ? (ma_count + 1) : MA_WINDOW);
     }
 
-    /* ----- PRINT FIXED MESSAGE HEADER ----- */
-    char head[32];
-    int len = snprintf(head, sizeof(head), "%d detected distances: ", result->num_distances);
-    HAL_UART_Transmit(&huart1, (uint8_t*)head, len, HAL_MAX_DELAY);
+    ma_idx = (ma_idx + 1) % MA_WINDOW;
+    if (ma_count < MA_WINDOW)
+        ma_count++;
 
-    /* ----- ALWAYS PRINT EXACTLY 3 FIELDS ----- */
+		radar_data[0] = dist_buf[0];
+		radar_data[1] = strength_buf[0];
+		radar_data[2] = dist_buf[1];
+		radar_data[3] = strength_buf[1];
+		radar_data[4] = dist_buf[2];
+		radar_data[5] = strength_buf[2];
+
+//    char head[32];
+//    int len = snprintf(head,
+//                       sizeof(head),
+//                       "%d detected distances: ",
+//                       result->num_distances);
+//    HAL_UART_Transmit(&hlpuart1, (uint8_t*)head, len, HAL_MAX_DELAY);
+
     for (uint8_t i = 0; i < MAX_DETECTIONS; i++)
     {
         char out[64];
-        int len2 = snprintf(
-            out,
-            sizeof(out),
-            "%.3f m  (strength: %.3f m)  ",
-            dist_buf[i],
-            strength_buf[i]
-        );
+        int len2 = snprintf(out,
+                            sizeof(out),
+                            "%.3f m  (strength: %.3f)  ",
+                            dist_buf[i],
+                            strength_buf[i]);
 
-        HAL_UART_Transmit(&huart1, (uint8_t*)out, len2, HAL_MAX_DELAY);
+        //HAL_UART_Transmit(&hlpuart1, (uint8_t*)out, len2, HAL_MAX_DELAY);
     }
 
-    HAL_UART_Transmit(&huart1, (uint8_t*)"\n", 1, HAL_MAX_DELAY);
+    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"\n", 1, HAL_MAX_DELAY);
 }
