@@ -337,8 +337,12 @@ static void _sdi_execute(uint32_t instr, full_command *command)
         }
         _address_changer(command->address, command->c3);
         //check if changed address still maps to a valid sensor. if yes, revert back the changes
-        if(__address_mapper(command->c3) == SENSOR_UNKNOWN) _address_changer(command->c3, command->address);
-        __sensor_address_msg(command->address);
+        if(__address_mapper(command->c3) == SENSOR_UNKNOWN) {
+            _address_changer(command->c3, command->address);
+            __sensor_address_msg(command->address);
+        } else {
+            __sensor_address_msg(command -> c3);
+        }
     break;
 
     case(0x004D0000): //start measurement aM
@@ -413,7 +417,7 @@ static void _sdi_execute(uint32_t instr, full_command *command)
                 __service_request_msg((char)(command->address), 2, 1);
             }
         }
-        config.status.sub_address = (command -> c3) - '0'; //converting ascii number to integer value
+        config.status.sub_address = ((command -> c3) - '0'); //converting ascii number to integer value
         config.var.sub_reading = 1;
 
         config.status.address = command->address;
@@ -652,7 +656,7 @@ void _sensor_send(sensor config)
     { //instead of if, multiplication with 1 or 0 is done to reduce no. of if statements while making code as much as readable
         case SENSOR_IMU:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_imu.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)&sdi_imu.status.address, sizeof(char), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, sdi_imu.status.tx_data_ptr + ((8 * sdi_imu.status.sub_address) * sdi_imu.var.sub_reading),
                                 strlen(sdi_imu.status.tx_data_ptr) - 16 * sdi_imu.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_imu.var.crc_en == 1){
@@ -671,7 +675,7 @@ void _sensor_send(sensor config)
         break;
         case SENSOR_CHARGER:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_charger.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)&sdi_charger.status.address, sizeof(char), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, sdi_charger.status.tx_data_ptr + ((8 * sdi_charger.status.sub_address) * sdi_charger.var.sub_reading), 
                                 strlen(sdi_charger.status.tx_data_ptr) - 40 * sdi_charger.var.sub_reading, HAL_MAX_DELAY);
            if(sdi_charger.var.crc_en == 1){
@@ -689,7 +693,7 @@ void _sensor_send(sensor config)
         break;
         case SENSOR_RADAR:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_radar.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)&sdi_radar.status.address, sizeof(char), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, sdi_radar.status.tx_data_ptr + ((8 * sdi_radar.status.sub_address) * sdi_radar.var.sub_reading),
                                 strlen(sdi_radar.status.tx_data_ptr) - 40 * sdi_radar.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_radar.var.crc_en == 1){
@@ -714,7 +718,7 @@ void _sensor_send(sensor config)
         break;
         case SENSOR_RTC:
             SDI_TX();
-            HAL_UART_Transmit(&hlpuart1, (uint8_t*)sdi_rtc.status.address, sizeof(char), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&hlpuart1, (uint8_t*)&sdi_rtc.status.address, sizeof(char), HAL_MAX_DELAY);
             HAL_UART_Transmit(&hlpuart1, sdi_rtc.status.tx_data_ptr + ((8 * sdi_rtc.status.sub_address) * sdi_rtc.var.sub_reading),
                                 strlen(sdi_rtc.status.tx_data_ptr) - 40 * sdi_rtc.var.sub_reading, HAL_MAX_DELAY);
             if(sdi_rtc.var.crc_en == 1){

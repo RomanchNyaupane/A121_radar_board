@@ -72,6 +72,7 @@ static void RTC_Init(void);
 // static void imu_config();
 static void sdi_init();
 static inline void _enable_debugger ( void );
+static void CRC_Init(void);
 
 
 void dummy(void){uint8_t dummy = 1;}
@@ -291,7 +292,7 @@ void sdi_task(){
 extern volatile uint8_t sdi_api_imu_start, sdi_api_charger_start, sdi_api_rtc_start, sdi_api_flash_start, sdi_api_radar_start; //interface variables
 extern volatile uint8_t sdi_api_imu_crc_en, sdi_api_charger_crc_en, sdi_api_radar_crc_en, sdi_api_rtc_crc_en, sdi_api_flash_crc_en;
 
-//data ready still to add in the condition checking, time checking not added, address changing not added
+//	data ready still to add in the condition checking, time checking not added, address changing not added
 void sdi_machine(){
   //char buf[35];
     while(1){
@@ -343,7 +344,7 @@ int main(void)
 	RTC_Init();
 	USART1_LPUART_Init();
 
-	printf("init complete");
+	//printf("init complete");
 
 	xTaskCreate(led_task, "LED", 500, NULL, 1, NULL);
   xTaskCreate(A121_Task, "A121", 0x2000, NULL, 1, NULL);
@@ -429,7 +430,7 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV16;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.AHBCLK2Divider = RCC_SYSCLK_DIV2;
   RCC_ClkInitStruct.AHBCLK4Divider = RCC_SYSCLK_DIV1;
@@ -461,7 +462,7 @@ static void MX_I2C1_Init(void)
 {
 
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x10B17DB5;
+  hi2c1.Init.Timing = 0x00100D14;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -726,10 +727,10 @@ RTC_TimeTypeDef sTime = {0};
 
 static void USART1_LPUART_Init(void){
     hlpuart1.Instance = LPUART1;
-    hlpuart1.Init.BaudRate = 115200;
-    hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
-    hlpuart1.Init.StopBits = UART_STOPBITS_1;
-    hlpuart1.Init.Parity = UART_PARITY_NONE;
+    hlpuart1.Init.BaudRate = 9600;
+		hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+		hlpuart1.Init.StopBits = UART_STOPBITS_1;
+		hlpuart1.Init.Parity = UART_PARITY_NONE;
     hlpuart1.Init.Mode = UART_MODE_TX_RX;
     hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
@@ -755,7 +756,6 @@ static void USART1_LPUART_Init(void){
 //    HAL_NVIC_SetPriority(LPUART1_IRQn, 0, 1);
 //    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
 		
-}
 
 static void sdi_init(void){
   sdi_rx_byte = 0;
@@ -778,8 +778,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     char sdi_rx_char = (char) sdi_rx_byte;
     sdi_data_rx_flag = sdi_cmd_receive(&sdi_rx_char);
 		if(sdi_data_rx_flag == 0) HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
+		
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
 	}
-	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
 	//HAL_UART_Receive_IT(&hlpuart1, &sdi_rx_byte, 1);
 }
 

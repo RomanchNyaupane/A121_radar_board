@@ -74,12 +74,12 @@ void get_adc(void) {
     HAL_I2C_Mem_Read(&hi2c1, charge_i2c_addr, CHARGER_ADC_BAT_TEMP_REG, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
     adc_val.bat_temp = (buf[1] | (uint16_t)(buf[0] << 8));
 
-    charger_data[0] = (adc_val.vbat) / 1000;
-    charger_data[1] = (adc_val.vsys) / 1000;
-    charger_data[2] = (adc_val.vbus) / 1000;
-    charger_data[3] = (adc_val.ibat) / 1000;
-    charger_data[4] = (adc_val.ibus) / 1000;
-    charger_data[5] = adc_val.bat_temp;
+    charger_data[0] = (float)(adc_val.vbat) / 1000;
+    charger_data[1] = (float)(adc_val.vsys) / 1000;
+    charger_data[2] = (float)(adc_val.vbus) / 1000;
+    charger_data[3] = (float)(adc_val.ibat) / 1000;
+    charger_data[4] = (float)(adc_val.ibus) / 1000;
+    charger_data[5] = (float)adc_val.bat_temp;  //temperature to be converted to meaningful value
 		// print_u16("VBAT",     adc_val.vbat);
 		// print_u16("VSYS",     adc_val.vsys);
 		// print_u16("VBUS",     adc_val.vbus);
