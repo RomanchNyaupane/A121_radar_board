@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the SDI (Sensor Data Interface) command encoding scheme used to efficiently decode and execute variable-length ASCII commands on embedded systems. The system converts human-readable commands into compact 32-bit instruction codes. The hex based approach is for removing the text processing overhead. The hex based approach trades code readability with less amount of processing.
+This document describes the SDI (Sensor Data Interface) command encoding scheme used to efficiently decode and execute variable-length ASCII commands on embedded systems. The system converts human-readable commands into compact 32-bit instruction codes. The hex based approach is for removing the text processing overhead. The hex based approach trades code readability with reduction of text processing.
 
 ## Command Structure
 
