@@ -303,15 +303,32 @@ static void _sdi_decode(full_command *command, uint8_t len)
 }
 
 /*
-    reasons for choosing the decoding and executing method is explained below.
-    the instruction category of length 1 and length 2 can be separated easily as they are distinct.
-    it is tricky for instruction of legth 3. because aMC(for example) is present as a unique instruction and aM1...aM9 is also present as instruction.(aMC, aD0..aD9, aM1..aM9, aCC, aC1..aC9, aR0..aR9)
-    we can create unique instruction for aM1 to aM9 too but it would add just too many switch cases. so we need to decode numerical/non numerical instruction in 3 length instructions as well.
-    thus, we need to decode and while decoding, i noticed, letter 'C' is what separates numerical instruction from pure letter equation in 3 length instruction. so i compared with 'C'.
-    i identified the instruction type and separated with fourth byte as 1 for numerical and as it is for non numerical instruction. so non numerical occupies all 4 bytes and numerical occupies-
-    2 bytes and two bytes should be fetched from command->c3.
-    4 length instructions are easy as we can separate the text and number. since MC1 decoding may call MC which is case for three length, so, for four length, i added one extra byte to separate it. now MC from three and 
-    MC from 4  length instruction have separate meaning in the switch case execution 
+### Explanation of the Decoding and Execution Method
+
+The approach to decoding instructions is based on the length and composition of each instruction. Here’s why this method was chosen:
+
+#### Distinguishing Instructions by Length
+- Instructions of **length 1 and length 2** are straightforward to separate because they are clearly distinct from one another.
+- The challenge arises with **instructions of length 3**, where certain instructions look similar but have different interpretations. For example:
+  - `aMC` is a unique instruction.
+  - `aM1` to `aM9` are also valid instructions.
+  
+  This pattern also applies to other instruction families like `aD0`-`aD9`, `aC1`-`aC9`, and `aR0`-`aR9`.
+
+#### Decoding Length 3 Instructions
+While we could create separate cases for each numerical instruction (e.g., `aM1`, `aM2`, etc.), this would make the switch statement unnecessarily large.
+Instead, we decode these instructions more efficiently by noting that:
+- In three-byte instructions, the letter **‘C’** distinguishes purely alphabetical instructions from those that include numbers.
+- During decoding, instructions are tagged: 
+  - **Non-numerical** instructions use all four bytes as-is.
+  - **Numerical** instructions use only the first two bytes, and the remaining two bytes are taken from `command->c3`.
+
+#### Handling Length 4 Instructions
+Instructions with **four bytes** are easier to process because the text and numeric parts can be cleanly separated.
+However, care is needed to avoid confusion: for instance, decoding `MC1` might incorrectly trigger the case for `MC`
+(a three-byte instruction). To prevent this, an **extra byte** is added during decoding for four-byte instructions.
+This ensures that `MC` from a three-byte instruction and `MC` from a four-byte instruction are treated as distinct cases 
+in the switch statement during execution. 
 */
 
 static void _sdi_execute(uint32_t instr, full_command *command)
